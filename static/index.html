@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sentiment Analysis</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+  <nav class="navbar">
+    <div class="container nav-inner">
+      <div class="brand">
+        <div class="logo">Sentiment API</div>
+        <div class="brand-sub">by Bayes Theory</div>
+      </div>
+
+      <ul class="nav-links">
+        <li><a class="nav-link" href="/main">Main</a></li>
+        <li><a class="nav-link" href="/dash">Dash</a></li>
+        <li><a class="nav-link" href="/docs">API Docs</a></li>
+        <li><a class="nav-link" href="#" onclick="checkHealth()">Status</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="container">
+    <section class="hero">
+      <h1>Sentiment Analysis</h1>
+      <p class="subtitle">Real-time emotion detection for English text</p>
+    </section>
+
+    <section class="card">
+      <div class="card-title">
+        <h2>Analyze Text</h2>
+      </div>
+
+      <div class="form-group">
+        <label for="text"><strong>Enter your text</strong></label>
+        <textarea
+          id="text"
+          rows="6"
+          placeholder="Write something in English..."
+          maxlength="5000"
+        ></textarea>
+        <small id="charCount">0 / 5000</small>
+      </div>
+
+      <div class="button-group">
+        <button class="btn btn-primary" onclick="runPredict()">Analyze</button>
+        <button class="btn btn-secondary" onclick="clearForm()">Clear</button>
+      </div>
+
+      <h3>Response</h3>
+      <pre id="result" class="result-box">Ready to analyze...</pre>
+    </section>
+
+    <section class="card info">
+      <h2>About</h2>
+      <ul>
+        <li><strong>Model:</strong> cardiffnlp/twitter-roberta-base-sentiment-latest</li>
+        <li><strong>Language:</strong> English only</li>
+        <li><strong>Classes:</strong> Positive, Neutral, Negative</li>
+        <li><strong>Max text:</strong> 5000 characters</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer>
+    <p>&copy; 2026 Sentiment API | Bayes Theory | Built with FastAPI + RoBERTa</p>
+  </footer>
+
+  <script>
+    const textEl = document.getElementById('text');
+    const resultEl = document.getElementById('result');
+    const charEl = document.getElementById('charCount');
+
+    textEl.addEventListener('input', (e) => {
+      const count = e.target.value.length;
+      charEl.textContent = `${count} / 5000`;
+    });
+
+    function roundNumber(x, decimals) {
+      const v = Number(x);
+      if (!Number.isFinite(v)) return x;
+      // toFixed retorna string; Number(...) mantém como number no JSON [web:377][web:376]
+      return Number(v.toFixed(decimals));
+    }
+
+    async function runPredict() {
+      const text = textEl.value.trim();
+
+      if (!text) {
+        resultEl.textContent = 'Empty text';
+        return;
+      }
+
+      resultEl.textContent = 'Analyzing...';
+
+      try {
+        const response = await fetch('/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text, lang: 'en' })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          data.score = roundNumber(data.score, 5);
+          data.inference_time_ms = roundNumber(data.inference_time_ms, 2);
+          resultEl.textContent = JSON.stringify(data, null, 2);
+        } else {
+          resultEl.textContent = (data.detail || 'Error');
+        }
+      } catch (error) {
+        resultEl.textContent = `Error: ${error.message}`;
+      }
+    }
+
+    async function checkHealth() {
+      try {
+        const response = await fetch('/health');
+        const data = await response.json();
+        alert(`Status: ${data.status}\nModel Ready: ${data.model_ready}`);
+      } catch (error) {
+        alert(`Error: ${error.message}`);
+      }
+    }
+
+    function clearForm() {
+      textEl.value = '';
+      resultEl.textContent = 'Ready to analyze...';
+      charEl.textContent = '0 / 5000';
+    }
+
+    textEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.shiftKey) runPredict();
+    });
+  </script>
+</body>
+</html>

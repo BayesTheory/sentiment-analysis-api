@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+    .row > * { flex: 1; min-width: 220px; }
+    .input { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; }
+    table { width: 100%; border-collapse: collapse; font-family: monospace; font-size: 12px; }
+    th, td { border: 1px solid var(--border); padding: 8px; vertical-align: top; }
+    th { background: #f5f5f5; text-align: left; }
+    .error { color: #b00020; white-space: pre-wrap; }
+    .muted { color: #666; font-size: 12px; }
+  </style>
+</head>
+
+<body>
+  <nav class="navbar">
+    <div class="container">
+      <div class="logo">Dashboard</div>
+    </div>
+  </nav>
+
+  <main class="container">
+    <section class="card">
+      <h2>Últimas inferências</h2>
+
+      <div class="row">
+        <div>
+          <label><strong>Senha admin</strong></label>
+          <input id="apiKey" class="input" type="password" placeholder="Digite a senha (padrão: ADMIN)" />
+          <div class="muted">A senha fica salva localmente neste navegador.</div>
+        </div>
+
+        <div>
+          <label><strong>Limit</strong></label>
+          <select id="limit" class="input">
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+          </select>
+        </div>
+
+        <div>
+          <button class="btn btn-primary" onclick="refresh()">Refresh</button>
+          <button class="btn btn-secondary" onclick="clearKey()">Limpar senha</button>
+        </div>
+      </div>
+
+      <p id="err" class="error"></p>
+
+      <div style="overflow-x:auto; margin-top: 16px;">
+        <table>
+          <thead>
+            <tr>
+              <th>created_at</th>
+              <th>id</th>
+              <th>lang</th>
+              <th>label</th>
+              <th>score</th>
+              <th>inference_time_ms</th>
+              <th>model_version</th>
+              <th>text</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+<script>
+  const KEY_STORAGE = "dash_api_key";
+
+  function getKey() {
+    return (localStorage.getItem(KEY_STORAGE) || "").trim();
+  }
+
+  function setKey(v) {
+    localStorage.setItem(KEY_STORAGE, (v || "").trim());
+  }
+
+  function clearKey() {
+    localStorage.removeItem(KEY_STORAGE);
+    document.getElementById("apiKey").value = "";
+    document.getElementById("err").textContent = "Senha removida.";
+  }
+
+  function escapeHtml(s) {
+    return (s ?? "").toString()
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+  }
+
+  async function refresh() {
+    const err = document.getElementById("err");
+    err.textContent = "";
+
+    const apiKeyInput = document.getElementById("apiKey").value.trim();
+    if (apiKeyInput) setKey(apiKeyInput);
+
+    const apiKey = getKey();
+    if (!apiKey) {
+      err.textContent = "Digite a senha admin (padrão: ADMIN).";
+      return;
+    }
+
+    const limit = document.getElementById("limit").value;
+
+    const res = await fetch(`/inferences?limit=${encodeURIComponent(limit)}`, {
+      headers: { "X-API-Key": apiKey }
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      err.textContent = "Erro: " + (data.detail || res.statusText || res.status);
+      return;
+    }
+
+    const rows = document.getElementById("rows");
+    rows.innerHTML = "";
+
+    for (const it of (data.items || [])) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(it.created_at ?? "-")}</td>
+        <td>${escapeHtml(it.id ?? "-")}</td>
+        <td>${escapeHtml(it.lang ?? "-")}</td>
+        <td>${escapeHtml(it.label ?? "-")}</td>
+        <td>${escapeHtml(it.score ?? "-")}</td>
+        <td>${escapeHtml(it.inference_time_ms ?? "-")}</td>
+        <td>${escapeHtml(it.model_version ?? "-")}</td>
+        <td>${escapeHtml(it.text ?? "")}</td>
+      `;
+      rows.appendChild(tr);
+    }
+  }
+
+  // Carrega senha salva
+  document.getElementById("apiKey").value = getKey();
+
+  // Enter no campo de senha -> refresh
+  document.getElementById("apiKey").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") refresh();
+  });
+
+  // Auto-refresh inicial
+  refresh();
+</script>
+</body>
+</html>
