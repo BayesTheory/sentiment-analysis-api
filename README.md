@@ -213,28 +213,6 @@ sentiment-analysis-api/
 
 ---
 
-## 🔧 Variáveis de Ambiente
-
-Arquivo `.env`:
-
-```env
-# App
-APP_NAME=Sentiment Analysis API
-APP_VERSION=1.0.0
-MODEL_NAME=cardiffnlp/twitter-roberta-base-sentiment-latest
-
-# API
-HOST=0.0.0.0
-PORT=8000
-WORKERS=1
-
-# Firestore (opcional)
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json
-FIRESTORE_COLLECTION=inferences
-```
-
----
-
 ## 🧠 Modelo
 
 - **Versão**: `cardiffnlp/twitter-roberta-base-sentiment-latest` (HuggingFace)
@@ -304,34 +282,7 @@ Para aumentar throughput em produção, aumente `WORKERS` ou replicas no Cloud R
 
 ---
 
-## 🐛 Troubleshooting
-
-### Modelo não carrega
-```bash
-python training/download_model.py
-```
-
-### Porta 8000 em uso
-```bash
-# Linux/macOS
-lsof -i :8000
-
-# Windows PowerShell
-netstat -ano | findstr :8000
-```
-
-### Cloud Run: erro de PORT
-Cloud Run espera variável `PORT` (padrão 8080). O Dockerfile já expõe corretamente.
-
-### Firestore: permissões negadas
-Verifique `GOOGLE_APPLICATION_CREDENTIALS` e IAM do seu projeto GCP.
-
-
 ## 📄 Licença
 
 MIT License — veja [LICENSE](./LICENSE) para detalhes.
 
----
-
-**Mantido por**: [BayesTheory](https://github.com/BayesTheory)  
-**Última atualização**: Janeiro 2026
