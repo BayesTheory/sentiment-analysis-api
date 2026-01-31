@@ -83,7 +83,6 @@
     function roundNumber(x, decimals) {
       const v = Number(x);
       if (!Number.isFinite(v)) return x;
-      // toFixed retorna string; Number(...) mantém como number no JSON [web:377][web:376]
       return Number(v.toFixed(decimals));
     }
 
@@ -98,21 +97,28 @@
       resultEl.textContent = 'Analyzing...';
 
       try {
-        const response = await fetch('/predict', {
+        // UI chama /ui/predict (sem senha) — quota/bloqueio fica no backend
+        const response = await fetch('/ui/predict', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text, lang: 'en' })
         });
 
-        const data = await response.json();
+        const data = await response.json().catch(() => ({}));
 
         if (response.ok) {
           data.score = roundNumber(data.score, 5);
           data.inference_time_ms = roundNumber(data.inference_time_ms, 2);
           resultEl.textContent = JSON.stringify(data, null, 2);
-        } else {
-          resultEl.textContent = (data.detail || 'Error');
+          return;
         }
+
+        if (response.status === 429) {
+          resultEl.textContent = `Rate limit: ${data.detail || 'Too Many Requests'}`;
+          return;
+        }
+
+        resultEl.textContent = (data.detail || `Error HTTP ${response.status}`);
       } catch (error) {
         resultEl.textContent = `Error: ${error.message}`;
       }

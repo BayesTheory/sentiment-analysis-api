@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 import os
 import uuid
 
-from fastapi import FastAPI, HTTPException, status, BackgroundTasks, Request
+from fastapi import FastAPI, HTTPException, status, BackgroundTasks, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +14,7 @@ from app.models import PredictRequest, PredictResponse, HealthResponse
 from app.utils import predict, is_model_loaded
 from app.firestore_client import save_inference
 from app.dash import router as dash_router
+from app.security import require_predict_api_key, enforce_ui_quota
 
 logger = get_logger(__name__)
 
@@ -35,17 +36,23 @@ async def lifespan(app_: FastAPI):
     logger.info("Encerrando aplicação")
 
 
+# Desabilita docs por padrão (produção) [web:253]
+EXPOSE_DOCS = os.getenv("EXPOSE_DOCS", "false").strip().lower() == "true"
+
 app = FastAPI(
     title=_cfg("app_name", "appname", default="Sentiment API"),
     version=_cfg("app_version", "appversion", default="0.0.0"),
     description="API de análise de sentimentos - RoBERTa Twitter Model",
     lifespan=lifespan,
+    docs_url="/docs" if EXPOSE_DOCS else None,
+    redoc_url="/redoc" if EXPOSE_DOCS else None,
+    openapi_url="/openapi.json" if EXPOSE_DOCS else None,
 )
 
 # Middleware (global)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # PoC: aberto. Se quiser, restringe depois.
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -65,8 +72,9 @@ async def root():
         "name": _cfg("app_name", "appname"),
         "version": _cfg("app_version", "appversion"),
         "ui_url": "/main",
+        "ui_predict_url": "/ui/predict",
         "dash_url": "/dash",
-        "docs_url": "/docs",
+        "docs_url": ("/docs" if EXPOSE_DOCS else None),
         "model": _cfg("model_name", "modelname"),
     }
 
@@ -95,47 +103,72 @@ async def health():
         )
 
 
+def _run_prediction(payload: PredictRequest, background_tasks: BackgroundTasks) -> PredictResponse:
+    label, score, inference_time_ms = predict(payload.text)
+
+    score = round(float(score), 5)
+    inference_time_ms = round(float(inference_time_ms), 2)
+
+    inference_id = str(uuid.uuid4())
+
+    doc = {
+        "id": inference_id,
+        "text": payload.text,
+        "lang": payload.lang,
+        "label": label,
+        "score": score,
+        "inference_time_ms": inference_time_ms,
+        "model_version": _cfg("app_version", "appversion"),
+        "created_at": firestore.SERVER_TIMESTAMP,
+    }
+
+    background_tasks.add_task(save_inference, inference_id, doc)
+
+    return PredictResponse(
+        inference_id=inference_id,
+        label=label,
+        score=score,
+        model_version=_cfg("app_version", "appversion"),
+        inference_time_ms=inference_time_ms,
+    )
+
+
+# API "puro" (COM senha)
 @app.post("/predict", response_model=PredictResponse, tags=["Prediction"])
 async def predict_sentiment(
     payload: PredictRequest,
     background_tasks: BackgroundTasks,
+    _auth: bool = Depends(require_predict_api_key),
 ):
     try:
-        logger.info(f"Predição: text_len={len(payload.text)}, lang={payload.lang}")
-
-        label, score, inference_time_ms = predict(payload.text)
-
-        score = round(float(score), 5)
-        inference_time_ms = round(float(inference_time_ms), 2)
-
-        inference_id = str(uuid.uuid4())
-
-        doc = {
-            "id": inference_id,
-            "text": payload.text,
-            "lang": payload.lang,
-            "label": label,
-            "score": score,
-            "inference_time_ms": inference_time_ms,
-            "model_version": _cfg("app_version", "appversion"),
-            "created_at": firestore.SERVER_TIMESTAMP,
-        }
-
-        background_tasks.add_task(save_inference, inference_id, doc)
-
-        return PredictResponse(
-            inference_id=inference_id,
-            label=label,
-            score=score,
-            model_version=_cfg("app_version", "appversion"),
-            inference_time_ms=inference_time_ms,
-        )
-
+        logger.info(f"Predição(API): text_len={len(payload.text)}, lang={payload.lang}")
+        return _run_prediction(payload, background_tasks)
     except ValueError as e:
         logger.warning(f"Validação: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
         logger.error(f"Erro: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Erro interno",
+        )
+
+
+# UI (SEM senha, mas com quota/bloqueio)
+@app.post("/ui/predict", response_model=PredictResponse, tags=["UI"])
+async def ui_predict_sentiment(
+    payload: PredictRequest,
+    background_tasks: BackgroundTasks,
+    _quota_ok: bool = Depends(enforce_ui_quota),
+):
+    try:
+        logger.info(f"Predição(UI): text_len={len(payload.text)}, lang={payload.lang}")
+        return _run_prediction(payload, background_tasks)
+    except ValueError as e:
+        logger.warning(f"Validação UI: {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Erro UI: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Erro interno",

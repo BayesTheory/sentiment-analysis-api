@@ -9,3 +9,5 @@ pytest>=7.4.3
 httpx>=0.25.2
 google-cloud-storage
 google-cloud-firestore
+functions-framework==3.*
+google-cloud-billing==1.*

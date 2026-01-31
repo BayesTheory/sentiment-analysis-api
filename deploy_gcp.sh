@@ -17,7 +17,7 @@ $TIMEOUT = "180"
 $MODEL_LOCAL_PATH = "/app/models"
 
 # dashboard
-$DASH_API_KEY = "ADMIN"
+$DASH_API_KEY = "9d51j3fyw0s3"
 
 # firestore (opcional, mas recomendado explicitar)
 $FIRESTORE_ENABLED = "true"
